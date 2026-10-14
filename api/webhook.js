@@ -85,6 +85,10 @@ async function redis(command) {
 }
 
 const OWNER_LINE_USER_ID = process.env.OWNER_LINE_USER_ID;
+// By default the bot only talks to customers who added the account AFTER it went live
+// (we receive a "follow" event for them). Existing friends / chats the owner already
+// handles are left alone. Set BOT_ALLOW_ALL=true to answer everyone.
+const BOT_ALLOW_ALL = process.env.BOT_ALLOW_ALL === "true";
 const memoryKV = new Map(); // fallback: key -> { value, expires }
 
 async function kvGet(key) {
@@ -197,27 +201,36 @@ async function push(to, text) {
 const HANDOFF_TAG = /\[\[HANDOFF:?([\s\S]*?)\]\]/;
 
 async function handleEvent(event) {
-  if (event.type !== "message" || !event.replyToken) return;
-  if (event.message.type !== "text") {
-    return reply(event.replyToken, "ขอบคุณที่ส่งมาค่ะ ตอนนี้ตอบได้เฉพาะข้อความ พิมพ์ถามเรื่องแพ็กเกจ ราคา หรือเงื่อนไขได้เลยนะคะ");
+  if (event.type === "follow" && event.source?.userId) {
+    await kvSet(`active:${event.source.userId}`, "1");
+    return;
   }
+  if (event.type !== "message" || !event.replyToken) return;
   try {
     const userId = event.source?.userId || "anonymous";
-    if (event.message.text.trim() === "/myid") {
-      return reply(event.replyToken, `userId: ${userId}`);
-    }
+    const isText = event.message.type === "text";
+    const text = isText ? event.message.text.trim() : "";
+
+    if (text === "/myid") return reply(event.replyToken, `userId: ${userId}`);
     // Owner command: "/resume <userId>" lets the bot answer that customer again.
-    const resume = event.message.text.trim().match(/^\/resume\s+(\S+)$/);
+    const resume = text.match(/^\/resume\s+(\S+)$/);
     if (resume && OWNER_LINE_USER_ID && userId === OWNER_LINE_USER_ID) {
       await kvDel(`handoff:${resume[1]}`);
+      await kvSet(`active:${resume[1]}`, "1");
       return reply(event.replyToken, `เปิดบอทให้ลูกค้า ${resume[1]} กลับมาตอบแล้ว`);
     }
+    // Existing customers (no follow event since go-live) are the owner's own chats: stay out.
+    if (!BOT_ALLOW_ALL && !(await kvGet(`active:${userId}`))) return;
     // Owner has taken over this chat: stay silent for good so the bot never talks over them.
     if (await kvGet(`handoff:${userId}`)) return;
 
+    if (!isText) {
+      return reply(event.replyToken, "ขอบคุณที่ส่งมาค่ะ ตอนนี้ตอบได้เฉพาะข้อความ พิมพ์ถามเรื่องแพ็กเกจ ราคา หรือเงื่อนไขได้เลยนะคะ");
+    }
+
     const data = await loadServiceData();
     const history = await loadHistory(userId);
-    history.push({ role: "user", text: event.message.text });
+    history.push({ role: "user", text });
     let answer =
       (await askGemini(history, data)) ||
       "ขออภัยค่ะ ตอนนี้ตอบไม่ได้ ทีมงานจะติดต่อกลับโดยเร็วนะคะ";
