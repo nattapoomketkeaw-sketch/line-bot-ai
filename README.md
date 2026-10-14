@@ -25,3 +25,15 @@ LINE chatbot ตอบลูกค้าเรื่องแพ็กเกจ 
 
 ## ความปลอดภัย
 อย่า commit token/secret ลง GitHub — ใช้ env ของ Vercel เท่านั้น (`.gitignore` กัน `.env` และ `Note.txt` ไว้แล้ว)
+
+## Facebook Messenger + Instagram DM (Meta)
+`api/meta.js` ใช้สมองเดียวกับ LINE (`lib/core.js`) Webhook URL: `https://<โดเมนของคุณ>.vercel.app/api/meta`
+
+| Key | ที่มา |
+|---|---|
+| `META_APP_SECRET` | Meta app → App settings → Basic → App secret |
+| `META_VERIFY_TOKEN` | ข้อความอะไรก็ได้ที่คุณตั้งเอง ใช้ตอนกรอก Webhook ในแอป Meta |
+| `META_PAGE_ACCESS_TOKEN` | Messenger → API setup → Generate token (ของเพจ) |
+| `META_APP_ID` | (แนะนำ) App ID ของแอป |
+
+กติกา: บอทตอบเฉพาะบทสนทนาใหม่ ถ้าแอดมินพิมพ์ตอบเองในกล่องข้อความเพจ บอทจะเงียบกับลูกค้าคนนั้นถาวร
