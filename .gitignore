@@ -147,3 +147,15 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# project
+.env
+.env.*
+!.env.example
+Note.txt
+
+# internal files (not needed by the deployed bot)
+RULES.md
+HANDOFF.md
+CLAUDE.md
+Package/

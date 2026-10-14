@@ -1,0 +1,8 @@
+{
+  "name": "line-bot-ai",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LINE chatbot that answers wedding package questions using Gemini and a Google Sheet",
+  "engines": { "node": ">=20" }
+}
