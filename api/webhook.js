@@ -4,8 +4,10 @@ const {
   LINE_CHANNEL_SECRET,
   LINE_CHANNEL_ACCESS_TOKEN,
   GEMINI_API_KEY,
-  SHEET_CSV_URL,
 } = process.env;
+
+// The sheet link may be stored under either name in Vercel.
+const SHEET_CSV_URL = process.env.SHEET_CSV_URL || process.env.DATA;
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
