@@ -66,7 +66,8 @@ async function handleEvent(event) {
       return;
     }
     // Owner has taken over this chat: stay silent for good so the bot never talks over them.
-    if (await kvGet(`handoff:${userId}`)) {
+    // BOT_ALLOW_ALL is a test mode: it also ignores earlier handoff silence.
+    if (!BOT_ALLOW_ALL && (await kvGet(`handoff:${userId}`))) {
       console.log(`skip ${userId}: handed off to owner`);
       return;
     }

@@ -121,7 +121,8 @@ async function handleMessaging(object, event) {
     }
     await kvSet(`active:${key}`, "1");
   }
-  if (await kvGet(`handoff:${key}`)) {
+  // META_ALLOW_ALL is a test mode: it also ignores earlier handoff/owner-reply silence.
+  if (!META_ALLOW_ALL && (await kvGet(`handoff:${key}`))) {
     console.log(`skip ${key}: handed off to owner`);
     return;
   }
