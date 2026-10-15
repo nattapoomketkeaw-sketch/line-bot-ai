@@ -89,7 +89,10 @@ async function handleMessaging(object, event) {
   if (msg?.is_echo) {
     const key = `meta:${object}:${event.recipient?.id}`;
     const own = (META_APP_ID && String(msg.app_id) === META_APP_ID) || (await kvGet(`botmid:${msg.mid}`));
-    if (!own) await kvSet(`handoff:${key}`, "1");
+    if (!own) {
+      console.log(`owner replied by hand to ${key}: bot goes silent`);
+      await kvSet(`handoff:${key}`, "1");
+    }
     return;
   }
   if (!msg || !event.sender?.id) return; // read receipts, postbacks, etc.
@@ -111,10 +114,16 @@ async function handleMessaging(object, event) {
       console.error("conversation check failed (staying silent)", err);
       return;
     }
-    if (!fresh) return void (await kvSet(`handoff:${key}`, "1")); // existing chat: owner's
+    if (!fresh) {
+      console.log(`skip ${key}: existing conversation (owner's chat)`);
+      return void (await kvSet(`handoff:${key}`, "1"));
+    }
     await kvSet(`active:${key}`, "1");
   }
-  if (await kvGet(`handoff:${key}`)) return;
+  if (await kvGet(`handoff:${key}`)) {
+    console.log(`skip ${key}: handed off to owner`);
+    return;
+  }
 
   try {
     if (!msg.text) {

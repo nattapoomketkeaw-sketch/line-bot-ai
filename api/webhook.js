@@ -60,9 +60,15 @@ async function handleEvent(event) {
       return reply(event.replyToken, `เปิดบอทให้ลูกค้า ${resume[1]} กลับมาตอบแล้ว`);
     }
     // Existing customers (no follow event since go-live) are the owner's own chats: stay out.
-    if (!BOT_ALLOW_ALL && !(await kvGet(`active:${userId}`))) return;
+    if (!BOT_ALLOW_ALL && !(await kvGet(`active:${userId}`))) {
+      console.log(`skip ${userId}: existing LINE friend (no follow event since go-live)`);
+      return;
+    }
     // Owner has taken over this chat: stay silent for good so the bot never talks over them.
-    if (await kvGet(`handoff:${userId}`)) return;
+    if (await kvGet(`handoff:${userId}`)) {
+      console.log(`skip ${userId}: handed off to owner`);
+      return;
+    }
 
     if (!isText) {
       return reply(event.replyToken, "ขอบคุณที่ส่งมาค่ะ ตอนนี้ตอบได้เฉพาะข้อความ พิมพ์ถามเรื่องแพ็กเกจ ราคา หรือเงื่อนไขได้เลยนะคะ");
