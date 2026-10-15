@@ -1,0 +1,10 @@
+name: followup
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS --max-time 60 https://line-bot-ai-sandy.vercel.app/api/followup

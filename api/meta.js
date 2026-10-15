@@ -10,6 +10,10 @@ import {
   alertOwnerOnce,
   notifyOwner,
   saveHistory,
+  startWaiting,
+  stopWaiting,
+  waitingAck,
+  handoffNotice,
 } from "../lib/core.js";
 
 // Facebook Messenger + Instagram DM webhook (Meta Messenger Platform).
@@ -94,6 +98,7 @@ async function handleMessaging(object, event) {
     if (!own) {
       console.log(`owner replied by hand to ${key}: bot goes silent`);
       await kvSet(`handoff:${key}`, "1");
+      await stopWaiting(key); // owner answered: stop reminders and reassurance
     }
     return;
   }
@@ -125,6 +130,8 @@ async function handleMessaging(object, event) {
   // META_ALLOW_ALL is a test mode: it also ignores earlier handoff/owner-reply silence.
   if (!META_ALLOW_ALL && (await kvGet(`handoff:${key}`))) {
     console.log(`skip ${key}: handed off to owner`);
+    const ack = await waitingAck(key);
+    if (ack) await sendText(userId, ack).catch((err) => console.error("wait ack failed", err));
     return;
   }
 
@@ -144,9 +151,9 @@ async function handleMessaging(object, event) {
     if (tag) {
       answer = answer.replace(HANDOFF_TAG, "").trim();
       await kvSet(`handoff:${key}`, "1");
-      await notifyOwner(
-        `🔔 ลูกค้าจาก ${label} รอให้คุณคุยต่อ\\nสรุป: ${tag[1].trim() || "-"}\\nkey: ${key}`.replaceAll("\\n", "\n"),
-      );
+      const summary = tag[1].trim();
+      await startWaiting(key, { channel: "meta", to: userId, label, name: "", summary });
+      await notifyOwner(handoffNotice({ label, name: "", summary, key }));
     }
 
     history.push({ role: "model", text: answer });

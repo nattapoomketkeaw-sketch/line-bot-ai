@@ -12,6 +12,12 @@ import {
   alertOwnerOnce,
   notifyOwner,
   saveHistory,
+  startWaiting,
+  stopWaiting,
+  findWaiting,
+  waitingAck,
+  getLineName,
+  handoffNotice,
 } from "../lib/core.js";
 
 const { LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN } = process.env;
@@ -58,7 +64,18 @@ async function handleEvent(event) {
     if (resume && OWNER_LINE_USER_ID && userId === OWNER_LINE_USER_ID) {
       await kvDel(`handoff:${resume[1]}`);
       await kvSet(`active:${resume[1]}`, "1");
+      await stopWaiting(resume[1]);
       return reply(event.replyToken, `เปิดบอทให้ลูกค้า ${resume[1]} กลับมาตอบแล้ว`);
+    }
+    // Owner command: "/done <code>" = I answered this customer, stop reminding me and reassuring them.
+    const done = text.match(/^\/done(?:\s+(\S+))?$/i);
+    if (done && OWNER_LINE_USER_ID && userId === OWNER_LINE_USER_ID) {
+      const keys = await findWaiting(done[1]);
+      for (const k of keys) await stopWaiting(k);
+      return reply(
+        event.replyToken,
+        keys.length ? `หยุดติดตามแล้ว ${keys.length} ราย` : "ไม่พบลูกค้าที่รอ (พิมพ์ /done <รหัส> หรือ /done all)",
+      );
     }
     // Existing customers (no follow event since go-live) are the owner's own chats: stay out.
     if (!BOT_ALLOW_ALL && !(await kvGet(`active:${userId}`))) {
@@ -69,6 +86,8 @@ async function handleEvent(event) {
     // BOT_ALLOW_ALL is a test mode: it also ignores earlier handoff silence.
     if (!BOT_ALLOW_ALL && (await kvGet(`handoff:${userId}`))) {
       console.log(`skip ${userId}: handed off to owner`);
+      const ack = await waitingAck(userId);
+      if (ack) await reply(event.replyToken, ack);
       return;
     }
 
@@ -87,10 +106,10 @@ async function handleEvent(event) {
     if (tag) {
       answer = answer.replace(HANDOFF_TAG, "").trim();
       await kvSet(`handoff:${userId}`, "1");
-      const note = `🔔 ลูกค้ารอให้คุณคุยต่อ
-สรุป: ${tag[1].trim() || "-"}
-userId: ${userId}`;
-      await notifyOwner(note);
+      const name = await getLineName(userId);
+      const summary = tag[1].trim();
+      await startWaiting(userId, { channel: "line", to: userId, label: "LINE", name, summary });
+      await notifyOwner(handoffNotice({ label: "LINE", name, summary, key: userId }));
     }
 
     history.push({ role: "model", text: answer });
