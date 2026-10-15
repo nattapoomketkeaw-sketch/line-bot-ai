@@ -9,6 +9,7 @@ import {
   kvSet,
   loadHistory,
   loadServiceData,
+  alertOwnerOnce,
   notifyOwner,
   saveHistory,
 } from "../lib/core.js";
@@ -96,6 +97,7 @@ userId: ${userId}`;
     await reply(event.replyToken, answer);
   } catch (err) {
     console.error(err);
+    await alertOwnerOnce("bot-error", `บอทตอบลูกค้าไม่ได้ (${String(err.message).slice(0, 160)}) กรุณาตอบลูกค้าเองใน LINE OA / Messenger`);
     await reply(event.replyToken, "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ทีมงานจะติดต่อกลับโดยเร็วนะคะ");
   }
 }

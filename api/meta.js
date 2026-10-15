@@ -6,6 +6,7 @@ import {
   kvSet,
   loadHistory,
   loadServiceData,
+  alertOwnerOnce,
   notifyOwner,
   saveHistory,
 } from "../lib/core.js";
@@ -151,6 +152,7 @@ async function handleMessaging(object, event) {
     await sendText(userId, answer);
   } catch (err) {
     console.error(err);
+    await alertOwnerOnce("bot-error", `บอทตอบลูกค้าไม่ได้ (${String(err.message).slice(0, 160)}) กรุณาตอบลูกค้าเองใน LINE OA / Messenger`);
     try {
       await sendText(userId, "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ทีมงานจะติดต่อกลับโดยเร็วนะคะ");
     } catch {
