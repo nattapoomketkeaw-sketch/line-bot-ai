@@ -4,5 +4,10 @@
   "private": true,
   "type": "module",
   "description": "LINE chatbot that answers wedding package questions using Gemini and a Google Sheet",
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@vercel/functions": "^3.10.1"
+  }
 }

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import {
   HANDOFF_TAG,
   askGemini,
@@ -177,12 +178,18 @@ export async function POST(request) {
     return new Response("Invalid signature", { status: 401 });
   }
   const body = JSON.parse(rawBody);
+  // Meta wants a 200 within 20 seconds and re-sends otherwise: acknowledge right away and
+  // let the (slower) Gemini work finish in the background after the response is sent.
   if (PLATFORM[body.object]) {
-    for (const entry of body.entry || []) {
-      for (const event of entry.messaging || []) {
-        await handleMessaging(body.object, event);
-      }
-    }
+    waitUntil(
+      (async () => {
+        for (const entry of body.entry || []) {
+          for (const event of entry.messaging || []) {
+            await handleMessaging(body.object, event);
+          }
+        }
+      })().catch((err) => console.error("meta background processing failed", err)),
+    );
   }
   return new Response("EVENT_RECEIVED");
 }
