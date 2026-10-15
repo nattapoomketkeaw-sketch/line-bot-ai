@@ -1,6 +1,6 @@
 # LINE Bot AI — Feeling writes a life
 
-LINE chatbot ตอบลูกค้าเรื่องแพ็กเกจ Cinema/Photo โดยใช้ Gemini 3.8 Flash อ่านข้อมูลจาก Google Sheet (CSV) รันบน Vercel
+LINE chatbot ตอบลูกค้าเรื่องแพ็กเกจ Cinema/Photo โดยใช้ Gemini 3.5 Flash-Lite อ่านข้อมูลจาก Google Sheet (CSV) รันบน Vercel
 
 ## โครงสร้าง
 - `api/webhook.js` — webhook (ตรวจ signature → อ่านชีท → ถาม Gemini → ตอบกลับทาง LINE)
