@@ -49,7 +49,16 @@ async function reply(replyToken, text) {
 
 async function handleEvent(event) {
   if (event.type === "follow" && event.source?.userId) {
-    await kvSet(`active:${event.source.userId}`, "1");
+    const id = event.source.userId;
+    // Quiet mode (owner: "/quiet"): new friends are customers the owner brought over from another
+    // channel to coordinate, so the bot stays out. "/resume <id>" turns the bot on for one of them.
+    if (!BOT_ALLOW_ALL && (await kvGet("quiet"))) {
+      const name = await getLineName(id);
+      console.log(`skip ${id}: follow during quiet mode`);
+      await notifyOwner(`🔕 โหมดเงียบ: ${name || "ลูกค้า"} เพิ่มเพื่อนใหม่ บอทไม่ตอบ\nถ้าเป็นลูกค้าใหม่ที่ต้องการให้บอทตอบ พิมพ์ /resume ${id}`);
+      return;
+    }
+    await kvSet(`active:${id}`, "1");
     return;
   }
   if (event.type !== "message" || !event.replyToken) return;
@@ -66,6 +75,20 @@ async function handleEvent(event) {
       await kvSet(`active:${resume[1]}`, "1");
       await stopWaiting(resume[1]);
       return reply(event.replyToken, `เปิดบอทให้ลูกค้า ${resume[1]} กลับมาตอบแล้ว`);
+    }
+    // Owner command: "/quiet [hours]" (default 24) = new LINE friends are NOT answered by the bot; "/quiet off" ends it.
+    const quiet = text.match(/^\/quiet(?:\s+(\S+))?$/i);
+    if (quiet && OWNER_LINE_USER_ID && userId === OWNER_LINE_USER_ID) {
+      if (/^off$/i.test(quiet[1] || "")) {
+        await kvDel("quiet");
+        return reply(event.replyToken, "ปิดโหมดเงียบแล้ว ลูกค้าใหม่ที่เพิ่มเพื่อนบอทจะตอบตามปกติ");
+      }
+      const hours = Math.min(Math.max(parseFloat(quiet[1]) || 24, 0.1), 168);
+      await kvSet("quiet", "1", Math.round(hours * 3600));
+      return reply(
+        event.replyToken,
+        `เปิดโหมดเงียบ ${hours} ชม. เพื่อนใหม่ที่แอดเข้ามาบอทจะไม่ตอบ (พิมพ์ /quiet off เพื่อปิด)`,
+      );
     }
     // Owner command: "/done <code>" = I answered this customer, stop reminding me and reassuring them.
     const done = text.match(/^\/done(?:\s+(\S+))?$/i);
