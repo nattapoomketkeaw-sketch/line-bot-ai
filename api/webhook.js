@@ -18,6 +18,9 @@ import {
   waitingAck,
   getLineName,
   handoffNotice,
+  checkPaymentSlip,
+  slipSummary,
+  SLIP_THANKS,
 } from "../lib/core.js";
 
 const { LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN } = process.env;
@@ -117,6 +120,23 @@ async function handleEvent(event) {
     if (!isText) {
       // Stickers/images/files: stay silent so the bot never talks over the owner mid-chat.
       // Images/files may need a human, so tell the owner (stickers are ignored).
+      if (event.message.type === "image") {
+        // A payment slip = booking confirmation: check it, then hand the customer to the owner for good.
+        const img = await fetch(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, {
+          headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` },
+        });
+        const slip = img.ok
+          ? await checkPaymentSlip(Buffer.from(await img.arrayBuffer()), img.headers.get("content-type") || "image/jpeg")
+          : null;
+        if (slip?.isSlip) {
+          await kvSet(`handoff:${userId}`, "1");
+          const name = await getLineName(userId);
+          const summary = slipSummary(slip);
+          await startWaiting(userId, { channel: "line", to: userId, label: "LINE", name, summary });
+          await notifyOwner(handoffNotice({ label: "LINE", name, summary: `${summary}\n(บอทตรวจจากรูปเท่านั้น กรุณาเช็กยอดเข้าบัญชีเอง)`, key: userId }));
+          return reply(event.replyToken, SLIP_THANKS);
+        }
+      }
       console.log(`skip ${userId}: non-text message (${event.message.type})`);
       if (event.message.type !== "sticker") {
         const name = await getLineName(userId);

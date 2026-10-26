@@ -14,6 +14,9 @@ import {
   stopWaiting,
   waitingAck,
   handoffNotice,
+  checkPaymentSlip,
+  slipSummary,
+  SLIP_THANKS,
 } from "../lib/core.js";
 
 // Facebook Messenger + Instagram DM webhook (Meta Messenger Platform).
@@ -138,6 +141,21 @@ async function handleMessaging(object, event) {
   try {
     if (!msg.text) {
       // Attachments/stickers: stay silent so the bot never talks over the owner mid-chat.
+      const imgUrl = msg.attachments?.find((a) => a.type === "image" && !msg.sticker_id)?.payload?.url;
+      if (imgUrl) {
+        // A payment slip = booking confirmation: check it, then hand the customer to the owner for good.
+        const img = await fetch(imgUrl);
+        const slip = img.ok
+          ? await checkPaymentSlip(Buffer.from(await img.arrayBuffer()), img.headers.get("content-type") || "image/jpeg")
+          : null;
+        if (slip?.isSlip) {
+          await kvSet(`handoff:${key}`, "1");
+          const summary = slipSummary(slip);
+          await startWaiting(key, { channel: "meta", to: userId, label, name: "", summary });
+          await notifyOwner(handoffNotice({ label, name: "", summary: `${summary}\n(บอทตรวจจากรูปเท่านั้น กรุณาเช็กยอดเข้าบัญชีเอง)`, key }));
+          return await sendText(userId, SLIP_THANKS);
+        }
+      }
       console.log(`skip ${key}: non-text message`);
       return await alertOwnerOnce(`media:${key}`, `ลูกค้า Messenger/IG (${key}) ส่งรูป/ไฟล์มา บอทไม่ตอบ กรุณาดูในแชท`);
     }
