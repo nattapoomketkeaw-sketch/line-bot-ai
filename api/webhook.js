@@ -92,7 +92,17 @@ async function handleEvent(event) {
     }
 
     if (!isText) {
-      return reply(event.replyToken, "ขอบคุณที่ส่งมาค่ะ ตอนนี้ตอบได้เฉพาะข้อความ พิมพ์ถามเรื่องแพ็กเกจ ราคา หรือเงื่อนไขได้เลยนะคะ");
+      // Stickers/images/files: stay silent so the bot never talks over the owner mid-chat.
+      // Images/files may need a human, so tell the owner (stickers are ignored).
+      console.log(`skip ${userId}: non-text message (${event.message.type})`);
+      if (event.message.type !== "sticker") {
+        const name = await getLineName(userId);
+        await alertOwnerOnce(
+          `media:${userId}`,
+          `ลูกค้า LINE ${name || userId} ส่ง${event.message.type === "image" ? "รูป" : "ไฟล์/ข้อความที่ไม่ใช่ตัวอักษร"}มา บอทไม่ตอบ กรุณาดูในแชท`,
+        );
+      }
+      return;
     }
 
     const data = await loadServiceData();

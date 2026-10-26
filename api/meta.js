@@ -137,7 +137,9 @@ async function handleMessaging(object, event) {
 
   try {
     if (!msg.text) {
-      return await sendText(userId, "ขอบคุณที่ส่งมาค่ะ ตอนนี้ตอบได้เฉพาะข้อความ พิมพ์ถามเรื่องแพ็กเกจ ราคา หรือเงื่อนไขได้เลยนะคะ");
+      // Attachments/stickers: stay silent so the bot never talks over the owner mid-chat.
+      console.log(`skip ${key}: non-text message`);
+      return await alertOwnerOnce(`media:${key}`, `ลูกค้า Messenger/IG (${key}) ส่งรูป/ไฟล์มา บอทไม่ตอบ กรุณาดูในแชท`);
     }
     await typing(userId);
     const data = await loadServiceData();
