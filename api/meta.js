@@ -1,19 +1,19 @@
 import crypto from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import {
-  HANDOFF_TAG,
   askGemini,
   kvGet,
   kvSet,
   loadHistory,
   loadServiceData,
   alertOwnerOnce,
-  notifyOwner,
   saveHistory,
-  startWaiting,
-  stopWaiting,
-  waitingAck,
-  handoffNotice,
+  isWaiting,
+  requestOwner,
+  processHandoff,
+  ownerTookOver,
+  WAITING_NOTE,
+  SILENT_TAG,
   checkPaymentSlip,
   slipSummary,
   SLIP_THANKS,
@@ -100,8 +100,7 @@ async function handleMessaging(object, event) {
     const own = (META_APP_ID && String(msg.app_id) === META_APP_ID) || (await kvGet(`botmid:${msg.mid}`));
     if (!own) {
       console.log(`owner replied by hand to ${key}: bot goes silent`);
-      await kvSet(`handoff:${key}`, "1");
-      await stopWaiting(key); // owner answered: stop reminders and reassurance
+      await ownerTookOver(key); // owner answered: bot goes silent, reminders and reassurance stop
     }
     return;
   }
@@ -131,12 +130,12 @@ async function handleMessaging(object, event) {
     await kvSet(`active:${key}`, "1");
   }
   // META_ALLOW_ALL is a test mode: it also ignores earlier handoff/owner-reply silence.
+  // Owner took over (replied by hand / /done / 24h without answer): silent. Customers only waiting for the owner still get answers.
   if (!META_ALLOW_ALL && (await kvGet(`handoff:${key}`))) {
-    console.log(`skip ${key}: handed off to owner`);
-    const ack = await waitingAck(key);
-    if (ack) await sendText(userId, ack).catch((err) => console.error("wait ack failed", err));
+    console.log(`skip ${key}: owner took over`);
     return;
   }
+  const metaInfo = { channel: "meta", to: userId, label, name: "" };
 
   try {
     if (!msg.text) {
@@ -149,10 +148,7 @@ async function handleMessaging(object, event) {
           ? await checkPaymentSlip(Buffer.from(await img.arrayBuffer()), img.headers.get("content-type") || "image/jpeg")
           : null;
         if (slip?.isSlip) {
-          await kvSet(`handoff:${key}`, "1");
-          const summary = slipSummary(slip);
-          await startWaiting(key, { channel: "meta", to: userId, label, name: "", summary });
-          await notifyOwner(handoffNotice({ label, name: "", summary: `${summary}\n(บอทตรวจจากรูปเท่านั้น กรุณาเช็กยอดเข้าบัญชีเอง)`, key }));
+          await requestOwner(key, metaInfo, slipSummary(slip), "(บอทตรวจจากรูปเท่านั้น กรุณาเช็กยอดเข้าบัญชีเอง)");
           return await sendText(userId, SLIP_THANKS);
         }
       }
@@ -163,18 +159,15 @@ async function handleMessaging(object, event) {
     const data = await loadServiceData();
     const history = await loadHistory(key);
     history.push({ role: "user", text: msg.text });
+    const waiting = await isWaiting(key);
     let answer =
-      (await askGemini(history, data)) ||
+      (await askGemini(history, data, waiting ? WAITING_NOTE : "")) ||
       "ขออภัยค่ะ ตอนนี้ตอบไม่ได้ ทีมงานจะติดต่อกลับโดยเร็วนะคะ";
-
-    const tag = answer.match(HANDOFF_TAG);
-    if (tag) {
-      answer = answer.replace(HANDOFF_TAG, "").trim();
-      await kvSet(`handoff:${key}`, "1");
-      const summary = tag[1].trim();
-      await startWaiting(key, { channel: "meta", to: userId, label, name: "", summary });
-      await notifyOwner(handoffNotice({ label, name: "", summary, key }));
+    if (SILENT_TAG.test(answer)) {
+      console.log(`skip ${key}: acknowledgement while waiting for owner`);
+      return;
     }
+    answer = await processHandoff(key, answer, metaInfo);
 
     history.push({ role: "model", text: answer });
     await saveHistory(key, history);

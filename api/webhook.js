@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import {
-  HANDOFF_TAG,
   BOT_ALLOW_ALL,
   OWNER_LINE_USER_ID,
   askGemini,
@@ -12,12 +11,15 @@ import {
   alertOwnerOnce,
   notifyOwner,
   saveHistory,
-  startWaiting,
   stopWaiting,
   findWaiting,
-  waitingAck,
   getLineName,
-  handoffNotice,
+  isWaiting,
+  requestOwner,
+  processHandoff,
+  ownerTookOver,
+  WAITING_NOTE,
+  SILENT_TAG,
   checkPaymentSlip,
   slipSummary,
   SLIP_THANKS,
@@ -93,14 +95,17 @@ async function handleEvent(event) {
         `เปิดโหมดเงียบ ${hours} ชม. เพื่อนใหม่ที่แอดเข้ามาบอทจะไม่ตอบ (พิมพ์ /quiet off เพื่อปิด)`,
       );
     }
-    // Owner command: "/done <code>" = I answered this customer, stop reminding me and reassuring them.
+    // Owner command: "/done <code>" = I answered this customer: stop reminders and make the bot silent for them.
+    // (LINE sends no event when the owner replies in OA Manager, so this is how the bot learns the owner took over.)
     const done = text.match(/^\/done(?:\s+(\S+))?$/i);
     if (done && OWNER_LINE_USER_ID && userId === OWNER_LINE_USER_ID) {
       const keys = await findWaiting(done[1]);
-      for (const k of keys) await stopWaiting(k);
+      for (const k of keys) await ownerTookOver(k);
       return reply(
         event.replyToken,
-        keys.length ? `หยุดติดตามแล้ว ${keys.length} ราย` : "ไม่พบลูกค้าที่รอ (พิมพ์ /done <รหัส> หรือ /done all)",
+        keys.length
+          ? `หยุดติดตามและปิดบอทสำหรับลูกค้า ${keys.length} ราย แล้ว (พิมพ์ /resume <key> ถ้าอยากเปิดบอทอีกครั้ง)`
+          : "ไม่พบลูกค้าที่รอ (พิมพ์ /done <รหัส> หรือ /done all)",
       );
     }
     // Existing customers (no follow event since go-live) are the owner's own chats: stay out.
@@ -108,14 +113,14 @@ async function handleEvent(event) {
       console.log(`skip ${userId}: existing LINE friend (no follow event since go-live)`);
       return;
     }
-    // Owner has taken over this chat: stay silent for good so the bot never talks over them.
+    // Owner has taken over this chat (/done, or waited 24h with no answer): stay silent so the bot never talks over them.
+    // Customers merely waiting for the owner are NOT silenced: the bot keeps answering what it can.
     // BOT_ALLOW_ALL is a test mode: it also ignores earlier handoff silence.
     if (!BOT_ALLOW_ALL && (await kvGet(`handoff:${userId}`))) {
-      console.log(`skip ${userId}: handed off to owner`);
-      const ack = await waitingAck(userId);
-      if (ack) await reply(event.replyToken, ack);
+      console.log(`skip ${userId}: owner took over`);
       return;
     }
+    const lineInfo = { channel: "line", to: userId, label: "LINE", name: () => getLineName(userId) };
 
     if (!isText) {
       // Stickers/images/files: stay silent so the bot never talks over the owner mid-chat.
@@ -129,11 +134,7 @@ async function handleEvent(event) {
           ? await checkPaymentSlip(Buffer.from(await img.arrayBuffer()), img.headers.get("content-type") || "image/jpeg")
           : null;
         if (slip?.isSlip) {
-          await kvSet(`handoff:${userId}`, "1");
-          const name = await getLineName(userId);
-          const summary = slipSummary(slip);
-          await startWaiting(userId, { channel: "line", to: userId, label: "LINE", name, summary });
-          await notifyOwner(handoffNotice({ label: "LINE", name, summary: `${summary}\n(บอทตรวจจากรูปเท่านั้น กรุณาเช็กยอดเข้าบัญชีเอง)`, key: userId }));
+          await requestOwner(userId, lineInfo, slipSummary(slip), "(บอทตรวจจากรูปเท่านั้น กรุณาเช็กยอดเข้าบัญชีเอง)");
           return reply(event.replyToken, SLIP_THANKS);
         }
       }
@@ -151,19 +152,16 @@ async function handleEvent(event) {
     const data = await loadServiceData();
     const history = await loadHistory(userId);
     history.push({ role: "user", text });
+    // While waiting for the owner the bot keeps answering, but stays quiet on plain thanks/acknowledgements.
+    const waiting = await isWaiting(userId);
     let answer =
-      (await askGemini(history, data)) ||
+      (await askGemini(history, data, waiting ? WAITING_NOTE : "")) ||
       "ขออภัยค่ะ ตอนนี้ตอบไม่ได้ ทีมงานจะติดต่อกลับโดยเร็วนะคะ";
-
-    const tag = answer.match(HANDOFF_TAG);
-    if (tag) {
-      answer = answer.replace(HANDOFF_TAG, "").trim();
-      await kvSet(`handoff:${userId}`, "1");
-      const name = await getLineName(userId);
-      const summary = tag[1].trim();
-      await startWaiting(userId, { channel: "line", to: userId, label: "LINE", name, summary });
-      await notifyOwner(handoffNotice({ label: "LINE", name, summary, key: userId }));
+    if (SILENT_TAG.test(answer)) {
+      console.log(`skip ${userId}: acknowledgement while waiting for owner`);
+      return;
     }
+    answer = await processHandoff(userId, answer, lineInfo);
 
     history.push({ role: "model", text: answer });
     await saveHistory(userId, history);
